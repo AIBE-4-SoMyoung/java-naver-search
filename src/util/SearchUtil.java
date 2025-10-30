@@ -1,0 +1,108 @@
+package util;
+
+import model.ImageItem;
+import model.NewsItem;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.List;
+
+public class SearchUtil {
+    // query -> UTF8 인코딩
+    public static String encodeQuery(String query) {
+        return URLEncoder.encode(query, StandardCharsets.UTF_8);
+    }
+
+    public static NewsItem getNewsItem(String jsonItem) {
+        String[] data = jsonItem.split("\":\""); // ":"
+        return new NewsItem(
+                data[1].split("\",")[0],
+                data[2].split("\",")[0],
+                data[3].split("\",")[0],
+                data[4].split("\",")[0],
+                data[5].strip().substring(0, data[5].strip().length() - 1)
+                        .split("\"")[0]
+        );
+    }
+
+    public static void saveNewsItem(String query, List<NewsItem> items) {
+        // 파일 이름에 확장자가 없음
+//        String filename = query + "_" + LocalDateTime.now().toString().replace(":", ".");
+        String filename = "%s_%s.txt".formatted(query, LocalDateTime.now().toString().replace(":", "."));
+        File file = new File(filename);
+        try (FileWriter writer = new FileWriter(file)) {
+            if (!file.exists()) { // 존재여부 확인
+                file.createNewFile();
+            }
+            for (NewsItem item : items) {
+                writer.write("제목 : " + item.title() + "\n");
+                writer.write("원본링크 : " + item.originallink() + "\n");
+                writer.write("링크 : " + item.link() + "\n");
+                writer.write("설명 : " + item.description() + "\n");
+                writer.write("작성일시 : " + item.pubDate() + "\n");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static ImageItem getImageItem(String jsonItem) {
+        String[] data = jsonItem.split("\":\""); // ":"
+        return new ImageItem(
+                data[1].split("\",")[0],
+                data[2].split("\",")[0],
+                data[3].split("\",")[0],
+                data[4].split("\",")[0],
+                data[5].strip().substring(0, data[5].strip().length() - 1)
+                        .split("\"")[0]
+        );
+    }
+
+    public static void saveImageItem(String query, List<ImageItem> items) {
+        // images 폴더 생성
+        File imagesDir = new File("images");
+        if (!imagesDir.exists()) {
+            imagesDir.mkdir();
+        }
+
+        // HTTP/1.1로 제한하여 SSL 문제 우회
+        HttpClient client = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+
+        for (ImageItem item : items) {
+//            System.out.println(item);
+            String[] tmp = item.link()
+                    .replace("/", ".").split("\\.");
+            String filename = "%s_%s.%s".formatted(query, tmp[tmp.length - 2], tmp[tmp.length - 1].split("\\?")[0]);
+//            System.out.println(filename);
+            Path destination = Path.of("images", filename);
+            System.out.println(item.link());
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(item.link().replace("\\/", "/")))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .timeout(Duration.ofSeconds(10))
+                    .build();
+            try {
+                client.send(request, HttpResponse.BodyHandlers.ofFile(destination));
+                System.out.println("파일 다운로드 완료 : " + filename);
+            } catch (Exception e) {
+                // 안되면 무시
+                System.out.println("파일 다운로드 실패 : " + filename);
+                e.printStackTrace();
+//                throw new RuntimeException(e);
+            }
+        }
+    }
+}
